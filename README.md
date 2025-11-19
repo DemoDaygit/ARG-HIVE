@@ -12,6 +12,19 @@ View your app in AI Studio: https://ai.studio/apps/drive/1mDrpiovsBRpz4JsYPcmeyg
 
 **Prerequisites:** Node.js 20+
 
+### Easy Setup (Recommended)
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Setup environment (interactive)
+./scripts/setup-env.sh
+
+# 3. Run the app
+npm run dev
+```
+
+### Manual Setup
 1. Install dependencies:
    ```bash
    npm install
@@ -28,66 +41,89 @@ View your app in AI Studio: https://ai.studio/apps/drive/1mDrpiovsBRpz4JsYPcmeyg
    npm run dev
    ```
 
-## Deployment Options
+## 🔒 Secure Deployment (Recommended)
 
-Multiple deployment options are available:
+**IMPORTANT:** Never expose your API key in client-side code!
 
-### 1. Vercel (Recommended)
+We provide **secure deployment options** with server-side API proxy:
+
+### 1. Vercel (Easiest - 30 seconds) ⭐
 ```bash
-# Using script
-./scripts/deploy-vercel.sh
-
-# Or manually
 vercel --prod
+# Then add GEMINI_API_KEY in Vercel Dashboard → Settings → Environment Variables
 ```
+✅ API key stays on server (safe!)
+✅ Automatic HTTPS & scaling
+✅ Free tier available
 
-### 2. Netlify
+### 2. Netlify (Fast - 1 minute)
 ```bash
-# Using script
-./scripts/deploy-netlify.sh
-
-# Or manually
 netlify deploy --prod
+# Then add GEMINI_API_KEY in Netlify → Site settings → Environment variables
 ```
+✅ API key stays on server (safe!)
+✅ Serverless functions included
+✅ Free tier available
 
-### 3. Docker
+### 3. Docker with Backend (Self-hosted)
 ```bash
-# Using script
-./scripts/deploy-docker.sh
-
-# Or manually
-docker-compose up -d
+# Secure deployment with Express backend
+./scripts/deploy-secure-docker.sh
 ```
+✅ API key stays on server (safe!)
+✅ Full stack in one container
+✅ Works on any VPS/Cloud
 
-### 4. GitHub Actions
+### 4. GitHub Actions (Automated)
 Push to main branch - automatic deployment configured!
 
-## Documentation
+## 📚 Documentation
 
-For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md)
+- **[SECURE_DEPLOYMENT.md](SECURE_DEPLOYMENT.md)** - 🔒 **Безопасный деплой без раскрытия API ключа** (ЧИТАТЬ ОБЯЗАТЕЛЬНО!)
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Подробные инструкции по всем вариантам деплоя
+
+## Deployment Comparison
+
+| Method | Security | Setup Time | Cost | Best For |
+|--------|----------|------------|------|----------|
+| **Vercel** | 🔒 Secure | 30 sec | Free tier | Quick deploy |
+| **Netlify** | 🔒 Secure | 1 min | Free tier | JAMstack apps |
+| **Docker** | 🔒 Secure | 2 min | VPS cost | Self-hosting |
+| Client-only | ❌ **UNSAFE** | Fast | Free | ⚠️ Never use! |
 
 ## Features
 
-- React 19 + TypeScript
-- Vite for fast builds
-- Gemini AI integration
-- Recharts for visualizations
-- Lucide icons
-- Production-ready Docker setup
-- CI/CD with GitHub Actions
+- 🔒 **Secure API proxy** - API ключ хранится на сервере
+- ⚛️ React 19 + TypeScript
+- ⚡ Vite for fast builds
+- 🤖 Gemini AI integration
+- 📊 Recharts for visualizations
+- 🎨 Lucide icons
+- 🐳 Production-ready Docker setup
+- 🚀 CI/CD with GitHub Actions
+- 🌐 Serverless functions (Vercel/Netlify)
+- 📦 Full-stack Express backend option
 
 ## Project Structure
 
 ```
 ARG-HIVE/
-├── components/       # React components
-├── contexts/         # React contexts
-├── utils/           # Utility functions
-├── scripts/         # Deployment scripts
-├── .github/         # GitHub Actions workflows
-├── App.tsx          # Main app component
-├── index.tsx        # Entry point
-└── vite.config.ts   # Vite configuration
+├── api/                    # Vercel serverless functions
+├── netlify/functions/      # Netlify serverless functions
+├── server/                 # Express backend (for Docker)
+├── components/             # React components
+├── contexts/               # React contexts
+├── utils/                  # Utility functions
+│   └── geminiClient.ts    # 🔒 Secure API client
+├── scripts/                # Deployment scripts
+│   ├── deploy-vercel.sh
+│   ├── deploy-netlify.sh
+│   ├── deploy-secure-docker.sh
+│   └── setup-env.sh
+├── .github/workflows/      # GitHub Actions CI/CD
+├── Dockerfile              # Frontend-only Docker
+├── Dockerfile.fullstack    # 🔒 Secure full-stack Docker
+└── docker-compose.fullstack.yml
 ```
 
 ## License
