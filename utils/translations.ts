@@ -1,16 +1,17 @@
 
+
 export const translations = {
   en: {
     sidebar: {
       intro: 'Vision',
       architecture: 'The Brain',
       technology: 'Deep Tech',
-      ecosystem: 'Ecosystem',
+      ecosystem: 'Participants',
       science: 'Science Base',
       trust: 'Protocol Layer',
       infrastructure: 'The Muscle',
       monetization: 'Financial Model',
-      tokenomics: 'Economy & Biz',
+      tokenomics: 'Tokenomics',
       roadmap: 'Roadmap',
       risks: 'Risk Matrix',
       status: 'Status',
@@ -84,7 +85,7 @@ export const translations = {
     ecosystem: {
       title: 'Ecosystem Participants',
       desc: 'Value proposition for all market stakeholders in the protocol.',
-      partTitle: 'Block A: Protocol Participants',
+      partTitle: 'Protocol Participants',
       devTitle: 'Developers & Startups',
       dev1: 'Zero-config OpenAI-compatible API.',
       dev2: 'Access to Llama-3-70B at 10% of standard cloud cost.',
@@ -104,7 +105,7 @@ export const translations = {
     science: {
       title: 'Scientific Foundation',
       desc: 'Academic research and whitepapers supporting the protocol implementation.',
-      sciTitle: 'Block B: Research Base (2024-2025)',
+      sciTitle: 'Research Base (2024-2025)',
       sciDesc: 'ARG H.I.V.E. is not just software; it is an implementation of cutting-edge research in distributed systems and collaborative AI.',
       paper1Title: 'Collaborative Intelligence in Heterogeneous Swarms',
       paper1Abst: 'Validates the "Mixture of Agents" approach, proving that 3 small models (7B) communicating via vector context can outperform one large model (GPT-4) in reasoning tasks while using 40% less energy.',
@@ -268,12 +269,12 @@ export const translations = {
       intro: 'Видение',
       architecture: 'Мозг',
       technology: 'Deep Tech',
-      ecosystem: 'Экосистема',
+      ecosystem: 'Участники',
       science: 'Научная База',
       trust: 'Протокол',
       infrastructure: 'Мощности',
       monetization: 'Фин. Модель',
-      tokenomics: 'Экосистема',
+      tokenomics: 'Токеномика',
       roadmap: 'Roadmap',
       risks: 'Риски',
       status: 'Статус',
@@ -347,7 +348,7 @@ export const translations = {
     ecosystem: {
       title: 'Экосистема Рынка',
       desc: 'Возможности для всех участников протокола.',
-      partTitle: 'Блок А: Участники Протокола',
+      partTitle: 'Участники Протокола',
       devTitle: 'Разработчики (Startups)',
       dev1: 'API, совместимый с OpenAI (Zero-config).',
       dev2: 'Доступ к Llama-3-70B за 10% от цены облаков.',
@@ -367,7 +368,7 @@ export const translations = {
     science: {
       title: 'Научный Фундамент',
       desc: 'Академическая база и whitepapers, лежащие в основе протокола.',
-      sciTitle: 'Блок Б: Научная База (2024-2025)',
+      sciTitle: 'Научная База (2024-2025)',
       sciDesc: 'ARG H.I.V.E. — это не просто софт, это реализация передовых исследований в области распределенных систем и коллаборативного ИИ.',
       paper1Title: 'Коллективный интеллект в гетерогенных роях',
       paper1Abst: 'Валидация подхода "Mixture of Agents". Доказывает, что 3 малые модели (7B), общаясь через векторный контекст, превосходят одну большую модель (GPT-4) в задачах на рассуждение, потребляя на 40% меньше энергии.',
