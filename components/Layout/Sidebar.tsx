@@ -1,6 +1,6 @@
 import React from 'react';
 import { SectionId, NavItem } from '../../types';
-import { Brain, ShieldCheck, Server, Coins, Map, AlertTriangle, Hexagon, Globe, Calculator, Cpu, FlaskConical, BookOpen } from 'lucide-react';
+import { Brain, ShieldCheck, Server, Coins, Map, AlertTriangle, Hexagon, Globe, Calculator, Cpu, FlaskConical, BookOpen, Network } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 interface SidebarProps {
@@ -14,6 +14,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeSection, onNavigate }) =
   const navItems: NavItem[] = [
     { id: SectionId.INTRO, label: t.sidebar.intro, icon: <Hexagon size={20} /> },
     { id: SectionId.ARCHITECTURE, label: t.sidebar.architecture, icon: <Brain size={20} /> },
+    { id: SectionId.KNOWLEDGE_GRAPH, label: t.sidebar.knowledgeGraph, icon: <Network size={20} /> },
     { id: SectionId.TECHNOLOGY, label: t.sidebar.technology, icon: <Cpu size={20} /> },
     { id: SectionId.ECOSYSTEM, label: t.sidebar.ecosystem, icon: <FlaskConical size={20} /> },
     { id: SectionId.SCIENCE, label: t.sidebar.science, icon: <BookOpen size={20} /> },

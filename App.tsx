@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Sidebar } from './components/Layout/Sidebar';
 import { IntroView } from './components/Views/IntroView';
 import { ArchitectureView } from './components/Views/ArchitectureView';
+import { KnowledgeGraphView } from './components/Views/KnowledgeGraphView';
 import { TechnologyView } from './components/Views/TechnologyView';
 import { EcosystemView } from './components/Views/EcosystemView';
 import { ScienceView } from './components/Views/ScienceView';
@@ -23,6 +24,8 @@ const AppContent: React.FC = () => {
         return <IntroView onStart={() => setActiveSection(SectionId.ARCHITECTURE)} />;
       case SectionId.ARCHITECTURE:
         return <ArchitectureView />;
+      case SectionId.KNOWLEDGE_GRAPH:
+        return <KnowledgeGraphView />;
       case SectionId.TECHNOLOGY:
         return <TechnologyView />;
       case SectionId.ECOSYSTEM:

@@ -3,6 +3,7 @@ import React from 'react';
 export enum SectionId {
   INTRO = 'intro',
   ARCHITECTURE = 'architecture',
+  KNOWLEDGE_GRAPH = 'knowledge_graph',
   TECHNOLOGY = 'technology',
   ECOSYSTEM = 'ecosystem',
   SCIENCE = 'science',
