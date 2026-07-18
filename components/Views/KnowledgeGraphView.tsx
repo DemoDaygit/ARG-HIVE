@@ -1,21 +1,19 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { Network, RotateCw, Pause, Play, Shuffle } from 'lucide-react';
+import {
+  Network, RotateCw, Pause, Play, Shuffle, Search, Flame, Zap,
+  Route, CheckCircle2, GraduationCap, X,
+} from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { SemanticGraph } from '../../engine/graph';
+import { SEMANTIC_FIELD } from '../../engine/dataset';
+import { KnowledgeEdge, KnowledgeNode, NodeKind, Domain, RelationKind } from '../../engine/types';
+import { LearnerModel, levelFromXp, levelBounds, xpForLearn, xpForReview } from '../../engine/learner';
 
-type NodeType = 'synthesizer' | 'proposer' | 'critic' | 'validator' | 'concept' | 'task';
+const GRAPH = new SemanticGraph(SEMANTIC_FIELD);
+const CONCEPT_IDS = GRAPH.nodes.filter((n) => n.kind === 'concept').map((n) => n.id);
 
-interface GraphNode {
-  id: string;
-  type: NodeType;
-}
-
-interface GraphEdge {
-  source: string;
-  target: string;
-}
-
-const TYPE_COLOR: Record<NodeType, number> = {
+const TYPE_COLOR: Record<NodeKind, number> = {
   synthesizer: 0x4ade80,
   proposer: 0x60a5fa,
   critic: 0xc084fc,
@@ -24,63 +22,57 @@ const TYPE_COLOR: Record<NodeType, number> = {
   task: 0xfbbf24,
 };
 
-const TYPE_SIZE: Record<NodeType, number> = {
+const DOMAIN_COLOR: Record<Domain, number> = {
+  foundations: 0x22d3ee,
+  swarm: 0x38bdf8,
+  protocol: 0xa78bfa,
+  economics: 0xf59e0b,
+  learning: 0x34d399,
+};
+
+const RELATION_COLOR: Record<RelationKind, number> = {
+  feeds: 0x3b82f6,
+  grounds: 0x22d3ee,
+  requires: 0xf59e0b,
+  extends: 0x4ade80,
+  relates: 0x8b5cf6,
+};
+
+const RELATION_SPRING: Record<RelationKind, number> = {
+  feeds: 20,
+  grounds: 17,
+  requires: 14,
+  extends: 14,
+  relates: 26,
+};
+
+const TYPE_SIZE: Record<Exclude<NodeKind, 'concept'>, number> = {
   synthesizer: 6,
   proposer: 3.6,
   critic: 3.6,
   validator: 3.0,
-  concept: 2.2,
   task: 2.0,
 };
 
-const NODES: GraphNode[] = [
-  { id: 'syn', type: 'synthesizer' },
-  { id: 'p1', type: 'proposer' },
-  { id: 'p2', type: 'proposer' },
-  { id: 'p3', type: 'proposer' },
-  { id: 'c1', type: 'critic' },
-  { id: 'c2', type: 'critic' },
-  { id: 'v1', type: 'validator' },
-  { id: 'v2', type: 'validator' },
-  { id: 'k1', type: 'concept' },
-  { id: 'k2', type: 'concept' },
-  { id: 'k3', type: 'concept' },
-  { id: 'k4', type: 'concept' },
-  { id: 'k5', type: 'concept' },
-  { id: 'k6', type: 'concept' },
-  { id: 't1', type: 'task' },
-  { id: 't2', type: 'task' },
-  { id: 't3', type: 'task' },
-];
+const DOMAIN_ORDER: Domain[] = ['foundations', 'swarm', 'protocol', 'economics', 'learning'];
+const LEGEND_TYPES: NodeKind[] = ['synthesizer', 'proposer', 'critic', 'validator', 'task'];
+const LEGEND_RELATIONS: RelationKind[] = ['feeds', 'grounds', 'requires', 'extends', 'relates'];
 
-const EDGES: GraphEdge[] = [
-  { source: 't1', target: 'p1' },
-  { source: 't1', target: 'p2' },
-  { source: 't2', target: 'p2' },
-  { source: 't2', target: 'p3' },
-  { source: 't3', target: 'p1' },
-  { source: 't3', target: 'p3' },
-  { source: 'p1', target: 'c1' },
-  { source: 'p2', target: 'c1' },
-  { source: 'p3', target: 'c2' },
-  { source: 'p1', target: 'c2' },
-  { source: 'p2', target: 'c2' },
-  { source: 'c1', target: 'syn' },
-  { source: 'c2', target: 'syn' },
-  { source: 'syn', target: 'v1' },
-  { source: 'syn', target: 'v2' },
-  { source: 'k1', target: 'p1' },
-  { source: 'k2', target: 'p2' },
-  { source: 'k3', target: 'p3' },
-  { source: 'k4', target: 'syn' },
-  { source: 'k5', target: 'c1' },
-  { source: 'k6', target: 'c2' },
-  { source: 'k1', target: 'syn' },
-  { source: 'k3', target: 'syn' },
-  { source: 'k6', target: 'p2' },
-];
+const MASTERED_GOLD = 0xfacc15;
 
-const LEGEND_TYPES: NodeType[] = ['synthesizer', 'proposer', 'critic', 'validator', 'concept', 'task'];
+function nodeColor(node: KnowledgeNode): number {
+  if (node.kind === 'concept' && node.domain) return DOMAIN_COLOR[node.domain];
+  return TYPE_COLOR[node.kind];
+}
+
+function nodeSize(node: KnowledgeNode): number {
+  if (node.kind === 'concept') return 1.8 + node.difficulty * 0.35;
+  return TYPE_SIZE[node.kind];
+}
+
+function hex(color: number): string {
+  return `#${color.toString(16).padStart(6, '0')}`;
+}
 
 function makeRadialTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -98,8 +90,9 @@ function makeRadialTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-function buildGeometry(type: NodeType, size: number): THREE.BufferGeometry {
-  switch (type) {
+function buildGeometry(node: KnowledgeNode): THREE.BufferGeometry {
+  const size = nodeSize(node);
+  switch (node.kind) {
     case 'synthesizer': return new THREE.IcosahedronGeometry(size, 1);
     case 'proposer': return new THREE.OctahedronGeometry(size);
     case 'critic': return new THREE.BoxGeometry(size * 1.25, size * 1.25, size * 1.25);
@@ -109,28 +102,39 @@ function buildGeometry(type: NodeType, size: number): THREE.BufferGeometry {
   }
 }
 
-function initialPosition(type: NodeType, idx: number): THREE.Vector3 {
+function initialPosition(node: KnowledgeNode, idx: number): THREE.Vector3 {
   const rand = () => (Math.random() - 0.5) * 2;
-  if (type === 'synthesizer') return new THREE.Vector3(0, 0, 0);
-  if (type === 'proposer') return new THREE.Vector3(rand() * 14, 22 + rand() * 5, rand() * 14);
-  if (type === 'critic') return new THREE.Vector3(rand() * 20, rand() * 6, rand() * 20);
-  if (type === 'validator') return new THREE.Vector3(rand() * 14, -22 + rand() * 5, rand() * 14);
-  const r = type === 'concept' ? 42 : 56;
-  const t = (idx * 1.7) + Math.random() * 2;
-  const p = Math.acos(2 * Math.random() - 1);
-  return new THREE.Vector3(r * Math.sin(p) * Math.cos(t), r * Math.cos(p), r * Math.sin(p) * Math.sin(t));
+  switch (node.kind) {
+    case 'synthesizer': return new THREE.Vector3(0, 0, 0);
+    case 'proposer': return new THREE.Vector3(rand() * 14, 22 + rand() * 5, rand() * 14);
+    case 'critic': return new THREE.Vector3(rand() * 20, rand() * 6, rand() * 20);
+    case 'validator': return new THREE.Vector3(rand() * 14, -22 + rand() * 5, rand() * 14);
+    case 'task': {
+      const t = idx * 2.1 + Math.random();
+      return new THREE.Vector3(Math.cos(t) * 58, rand() * 18, Math.sin(t) * 58);
+    }
+    case 'concept': {
+      // Concepts start inside an angular sector per domain so force settling
+      // preserves visible domain clusters.
+      const domainIdx = node.domain ? DOMAIN_ORDER.indexOf(node.domain) : 0;
+      const base = (domainIdx / DOMAIN_ORDER.length) * Math.PI * 2;
+      const theta = base + (Math.random() - 0.5) * 1.0;
+      const r = 38 + node.difficulty * 4 + Math.random() * 6;
+      const y = (Math.random() - 0.5) * 44;
+      return new THREE.Vector3(Math.cos(theta) * r, y, Math.sin(theta) * r);
+    }
+  }
 }
 
 function settleForces(
   positions: Map<string, THREE.Vector3>,
   velocities: Map<string, THREE.Vector3>,
-  edges: GraphEdge[],
+  edges: KnowledgeEdge[],
   steps: number,
 ) {
   const ids = Array.from(positions.keys());
-  const repulsion = 420;
+  const repulsion = 460;
   const springK = 0.028;
-  const springLen = 19;
   const gravity = 0.012;
   const damping = 0.78;
   const dt = 0.5;
@@ -162,6 +166,7 @@ function settleForces(
       tmp.subVectors(pt, ps);
       const dist = tmp.length();
       if (dist < 0.001) continue;
+      const springLen = RELATION_SPRING[e.relation] / (0.6 + e.weight * 0.4);
       const stretch = dist - springLen;
       tmp.normalize().multiplyScalar(stretch * springK);
       forces.get(e.source)!.add(tmp);
@@ -238,7 +243,7 @@ function createOrbit(camera: THREE.PerspectiveCamera, dom: HTMLElement): OrbitSt
   function onWheel(e: WheelEvent) {
     e.preventDefault();
     spherical.radius *= e.deltaY > 0 ? 1.08 : 0.92;
-    spherical.radius = Math.max(45, Math.min(280, spherical.radius));
+    spherical.radius = Math.max(45, Math.min(320, spherical.radius));
   }
 
   dom.addEventListener('pointerdown', onDown);
@@ -267,12 +272,19 @@ export const KnowledgeGraphView: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
   const [reshuffleSignal, setReshuffleSignal] = useState(0);
+  const [query, setQuery] = useState('');
+  const [pathIds, setPathIds] = useState<string[] | null>(null);
+  const [learner] = useState(() => new LearnerModel());
+  const [learnerTick, setLearnerTick] = useState(0);
+  const [xpToast, setXpToast] = useState<{ amount: number; ts: number } | null>(null);
 
   const hoveredRef = useRef<string | null>(null);
   const selectedRef = useRef<string | null>(null);
+  const highlightRef = useRef<Set<string> | null>(null);
   const setHoveredFn = useRef(setHoveredId);
   const setSelectedFn = useRef(setSelectedId);
   const orbitRef = useRef<OrbitState | null>(null);
+  const wireMatsRef = useRef<Map<string, THREE.MeshBasicMaterial>>(new Map());
 
   useEffect(() => { hoveredRef.current = hoveredId; }, [hoveredId]);
   useEffect(() => { selectedRef.current = selectedId; }, [selectedId]);
@@ -280,8 +292,40 @@ export const KnowledgeGraphView: React.FC = () => {
   useEffect(() => { setSelectedFn.current = setSelectedId; }, [setSelectedId]);
   useEffect(() => { orbitRef.current?.setAutoRotate(autoRotate); }, [autoRotate]);
 
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const lang = (t as any).knowledgeGraph;
+
+  const mastered = useMemo(() => learner.masteredSet(), [learner, learnerTick]);
+  const searchHits = useMemo(
+    () => (query.trim() ? GRAPH.search(query, language) : []),
+    [query, language],
+  );
+  const frontier = useMemo(() => GRAPH.frontier(mastered, 3), [mastered]);
+
+  useEffect(() => {
+    if (query.trim()) {
+      highlightRef.current = new Set(searchHits.map((h) => h.node.id));
+    } else if (pathIds) {
+      highlightRef.current = new Set(pathIds);
+    } else {
+      highlightRef.current = null;
+    }
+  }, [query, searchHits, pathIds]);
+
+  useEffect(() => {
+    if (!xpToast) return;
+    const timer = setTimeout(() => setXpToast(null), 1800);
+    return () => clearTimeout(timer);
+  }, [xpToast]);
+
+  // Mastery halo: gold wireframe on mastered nodes.
+  useEffect(() => {
+    for (const [id, mat] of wireMatsRef.current) {
+      const isMastered = mastered.has(id);
+      mat.color.setHex(isMastered ? MASTERED_GOLD : 0xffffff);
+      mat.opacity = isMastered ? 0.6 : 0.22;
+    }
+  }, [mastered, reshuffleSignal]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -294,7 +338,7 @@ export const KnowledgeGraphView: React.FC = () => {
     scene.fog = new THREE.FogExp2(0x050b14, 0.0045);
 
     const camera = new THREE.PerspectiveCamera(55, width / height, 0.1, 1200);
-    camera.position.set(0, 38, 130);
+    camera.position.set(0, 38, 140);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
@@ -318,7 +362,7 @@ export const KnowledgeGraphView: React.FC = () => {
     const starCount = 900;
     const starPos = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount; i++) {
-      const r = 320 + Math.random() * 220;
+      const r = 340 + Math.random() * 220;
       const t1 = Math.random() * Math.PI * 2;
       const t2 = Math.acos(2 * Math.random() - 1);
       starPos[i * 3] = r * Math.sin(t2) * Math.cos(t1);
@@ -334,7 +378,7 @@ export const KnowledgeGraphView: React.FC = () => {
     scene.add(stars);
 
     const boundary = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(88, 1),
+      new THREE.IcosahedronGeometry(96, 1),
       new THREE.MeshBasicMaterial({ color: 0x1d4ed8, wireframe: true, transparent: true, opacity: 0.08 }),
     );
     scene.add(boundary);
@@ -344,24 +388,24 @@ export const KnowledgeGraphView: React.FC = () => {
 
     const positions = new Map<string, THREE.Vector3>();
     const velocities = new Map<string, THREE.Vector3>();
-    NODES.forEach((n, i) => {
-      positions.set(n.id, initialPosition(n.type, i));
+    GRAPH.nodes.forEach((n, i) => {
+      positions.set(n.id, initialPosition(n, i));
       velocities.set(n.id, new THREE.Vector3());
     });
-    settleForces(positions, velocities, EDGES, 260);
+    settleForces(positions, velocities, GRAPH.edges, 280);
 
     const radialTex = makeRadialTexture();
 
     const nodeMeshes = new Map<string, THREE.Mesh>();
     const nodeGroups = new Map<string, THREE.Group>();
-    const nodeWires = new Map<string, THREE.Mesh>();
     const nodeSprites = new Map<string, THREE.Sprite>();
     const disposables: { dispose?: () => void }[] = [];
+    wireMatsRef.current = new Map();
 
-    for (const node of NODES) {
-      const color = TYPE_COLOR[node.type];
-      const size = TYPE_SIZE[node.type];
-      const geo = buildGeometry(node.type, size);
+    for (const node of GRAPH.nodes) {
+      const color = nodeColor(node);
+      const size = nodeSize(node);
+      const geo = buildGeometry(node);
       const mat = new THREE.MeshStandardMaterial({
         color, emissive: color, emissiveIntensity: 0.65, metalness: 0.45, roughness: 0.28,
       });
@@ -375,6 +419,7 @@ export const KnowledgeGraphView: React.FC = () => {
       const wire = new THREE.Mesh(wireGeo, wireMat);
       wire.scale.setScalar(1.06);
       mesh.add(wire);
+      wireMatsRef.current.set(node.id, wireMat);
 
       const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
         map: radialTex, color, transparent: true, opacity: 0.7,
@@ -391,37 +436,41 @@ export const KnowledgeGraphView: React.FC = () => {
 
       nodeMeshes.set(node.id, mesh);
       nodeGroups.set(node.id, grp);
-      nodeWires.set(node.id, wire);
       nodeSprites.set(node.id, sprite);
       disposables.push(geo, mat, wireGeo, wireMat, sprite.material as THREE.Material);
     }
 
-    const edgeLines: { line: THREE.Line; edge: GraphEdge; mat: THREE.LineBasicMaterial }[] = [];
+    const edgeLines: { line: THREE.Line; edge: KnowledgeEdge; mat: THREE.LineBasicMaterial }[] = [];
     const edgePulses: { sprite: THREE.Sprite; source: string; target: string; t: number; speed: number; mat: THREE.SpriteMaterial }[] = [];
 
-    for (const e of EDGES) {
+    for (const e of GRAPH.edges) {
       const ps = positions.get(e.source)!;
       const pt = positions.get(e.target)!;
       const lineGeo = new THREE.BufferGeometry().setFromPoints([ps.clone(), pt.clone()]);
-      const lineMat = new THREE.LineBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.32 });
+      const lineMat = new THREE.LineBasicMaterial({
+        color: RELATION_COLOR[e.relation], transparent: true, opacity: 0.3,
+      });
       const line = new THREE.Line(lineGeo, lineMat);
       line.userData.edge = e;
       graphGroup.add(line);
       edgeLines.push({ line, edge: e, mat: lineMat });
       disposables.push(lineGeo, lineMat);
 
-      const pulseMat = new THREE.SpriteMaterial({
-        map: radialTex, color: 0x22d3ee, transparent: true, opacity: 0.85,
-        blending: THREE.AdditiveBlending, depthWrite: false,
-      });
-      const pulse = new THREE.Sprite(pulseMat);
-      pulse.scale.setScalar(2.4);
-      graphGroup.add(pulse);
-      edgePulses.push({
-        sprite: pulse, source: e.source, target: e.target,
-        t: Math.random(), speed: 0.0035 + Math.random() * 0.005, mat: pulseMat,
-      });
-      disposables.push(pulseMat);
+      // Animated pulses only along the live inference pipeline.
+      if (e.relation === 'feeds') {
+        const pulseMat = new THREE.SpriteMaterial({
+          map: radialTex, color: 0x22d3ee, transparent: true, opacity: 0.85,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        });
+        const pulse = new THREE.Sprite(pulseMat);
+        pulse.scale.setScalar(2.4);
+        graphGroup.add(pulse);
+        edgePulses.push({
+          sprite: pulse, source: e.source, target: e.target,
+          t: Math.random(), speed: 0.0035 + Math.random() * 0.005, mat: pulseMat,
+        });
+        disposables.push(pulseMat);
+      }
     }
 
     const orbit = createOrbit(camera, renderer.domElement);
@@ -471,17 +520,30 @@ export const KnowledgeGraphView: React.FC = () => {
       boundary.rotation.y += 0.0007;
 
       const focusId = selectedRef.current ?? hoveredRef.current;
+      const highlight = highlightRef.current;
 
       for (const [id, grp] of nodeGroups) {
         const mesh = nodeMeshes.get(id)!;
         mesh.rotation.y += 0.006;
         mesh.rotation.x += 0.0035;
         const breathing = 1 + Math.sin(elapsed * 1.8 + id.charCodeAt(0)) * 0.045;
-        const focused = focusId === id ? 1.32 : focusId == null ? 1 : 0.88;
-        const targetScale = breathing * focused;
+
+        const inHighlight = highlight ? highlight.has(id) : true;
+        let emphasis: number;
+        if (focusId === id) emphasis = 1.32;
+        else if (!inHighlight) emphasis = 0.55;
+        else if (focusId != null) emphasis = 0.88;
+        else emphasis = 1;
+
+        const targetScale = breathing * emphasis;
         grp.scale.lerp(tmpV.set(targetScale, targetScale, targetScale), 0.18);
-        const spriteOpacity = focusId === id ? 0.95 : (focusId == null ? 0.7 : 0.45);
+
         const sprite = nodeSprites.get(id)!;
+        let spriteOpacity: number;
+        if (focusId === id) spriteOpacity = 0.95;
+        else if (!inHighlight) spriteOpacity = 0.12;
+        else if (focusId != null) spriteOpacity = 0.45;
+        else spriteOpacity = 0.7;
         (sprite.material as THREE.SpriteMaterial).opacity = spriteOpacity;
       }
 
@@ -492,13 +554,18 @@ export const KnowledgeGraphView: React.FC = () => {
         const pt = nodeGroups.get(ep.target)!.position;
         ep.sprite.position.lerpVectors(ps, pt, ep.t);
         const isFocused = focusId === ep.source || focusId === ep.target;
-        ep.mat.opacity = isFocused ? 1 : (focusId == null ? 0.75 : 0.3);
+        const inHighlight = highlight
+          ? highlight.has(ep.source) && highlight.has(ep.target)
+          : true;
+        ep.mat.opacity = isFocused ? 1 : !inHighlight ? 0.08 : focusId == null ? 0.75 : 0.3;
       }
 
       for (const el of edgeLines) {
         const isFocused = focusId === el.edge.source || focusId === el.edge.target;
-        el.mat.color.setHex(isFocused ? 0x22d3ee : 0x3b82f6);
-        el.mat.opacity = isFocused ? 0.85 : (focusId == null ? 0.32 : 0.14);
+        const inHighlight = highlight
+          ? highlight.has(el.edge.source) && highlight.has(el.edge.target)
+          : true;
+        el.mat.opacity = isFocused ? 0.9 : !inHighlight ? 0.05 : focusId == null ? 0.3 : 0.12;
       }
 
       if (pointerInside) {
@@ -527,6 +594,7 @@ export const KnowledgeGraphView: React.FC = () => {
       renderer.domElement.removeEventListener('click', onClick);
       orbit.dispose();
       orbitRef.current = null;
+      wireMatsRef.current = new Map();
       if (renderer.domElement.parentNode === mount) {
         mount.removeChild(renderer.domElement);
       }
@@ -541,15 +609,33 @@ export const KnowledgeGraphView: React.FC = () => {
   }, [reshuffleSignal]);
 
   const focusId = selectedId ?? hoveredId;
-  const focusNode = focusId ? NODES.find((n) => n.id === focusId) ?? null : null;
-  const focusConnections = focusNode
-    ? EDGES.filter((e) => e.source === focusNode.id || e.target === focusNode.id).length
-    : 0;
+  const focusNode = focusId ? GRAPH.node(focusId) ?? null : null;
 
-  const typeCounts: Record<NodeType, number> = {
-    synthesizer: 0, proposer: 0, critic: 0, validator: 0, concept: 0, task: 0,
+  const now = Date.now();
+  const focusProgress = focusNode ? learner.state.progress[focusNode.id] : undefined;
+  const focusDue = focusProgress ? focusProgress.dueAt <= now : false;
+  const relatedNodes = focusNode ? GRAPH.related(focusNode.id, 4) : [];
+  const prereqNodes = focusNode ? GRAPH.prerequisites(focusNode.id) : [];
+
+  const xp = learner.state.xp;
+  const level = levelFromXp(xp);
+  const bounds = levelBounds(xp);
+  const levelPct = Math.min(100, Math.round(((xp - bounds.current) / Math.max(1, bounds.next - bounds.current)) * 100));
+  const masteryPct = Math.round(learner.masteryRatio(CONCEPT_IDS) * 100);
+  const dueCount = learner.dueIds(now).length;
+
+  const handleStudy = (node: KnowledgeNode) => {
+    const gained = learner.study(node, Date.now());
+    if (gained > 0) setXpToast({ amount: gained, ts: Date.now() });
+    setLearnerTick((v) => v + 1);
   };
-  for (const n of NODES) typeCounts[n.type]++;
+
+  const handleBuildPath = (id: string) => {
+    setQuery('');
+    setPathIds(GRAPH.learningPath(id).map((n) => n.id));
+  };
+
+  const labelOf = (n: KnowledgeNode) => n.label[language];
 
   return (
     <div className="h-full w-full flex flex-col">
@@ -564,37 +650,137 @@ export const KnowledgeGraphView: React.FC = () => {
       <div className="flex-1 relative overflow-hidden">
         <div ref={mountRef} className="absolute inset-0" />
 
-        <div className="absolute top-4 left-4 glass-panel rounded-xl p-3 z-10 w-[200px]">
+        {/* Semantic search */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 w-[340px]">
+          <div className="glass-panel rounded-xl flex items-center gap-2 px-3 py-2">
+            <Search size={14} className="text-cyan-400 shrink-0" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={lang.searchPlaceholder}
+              className="bg-transparent outline-none text-xs text-slate-200 placeholder-slate-500 w-full font-mono"
+            />
+            {query && (
+              <button onClick={() => setQuery('')} className="text-slate-500 hover:text-slate-200">
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          {query.trim() && (
+            <div className="glass-panel rounded-xl mt-1 py-1 max-h-[240px] overflow-y-auto">
+              {searchHits.map((h) => (
+                <button
+                  key={h.node.id}
+                  onClick={() => setSelectedId(h.node.id)}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-cyber-700/50 flex items-center gap-2"
+                >
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: hex(nodeColor(h.node)) }}
+                  />
+                  <span className="text-slate-200 truncate">{labelOf(h.node)}</span>
+                  <span className="ml-auto text-[9px] font-mono text-slate-500 uppercase shrink-0">
+                    {h.node.domain ? lang.domains[h.node.domain] : lang.types[h.node.kind]}
+                  </span>
+                </button>
+              ))}
+              {searchHits.length === 0 && (
+                <div className="px-3 py-2 text-xs text-slate-500 font-mono">∅</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Legend: agents, domains, relations */}
+        <div className="absolute top-4 left-4 glass-panel rounded-xl p-3 z-10 w-[210px]">
           <div className="text-cyan-300 text-[10px] uppercase font-mono mb-2 tracking-widest">{lang.legend}</div>
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {LEGEND_TYPES.map((tp) => (
-              <button
-                key={tp}
-                onMouseEnter={() => setHoveredId(null)}
-                className="w-full flex items-center justify-between text-xs hover:bg-cyber-700/40 px-1 py-0.5 rounded transition-colors"
-              >
+              <div key={tp} className="flex items-center gap-2 text-[11px]">
+                <span
+                  className="w-2.5 h-2.5 rounded-sm shadow-[0_0_8px_currentColor]"
+                  style={{ backgroundColor: hex(TYPE_COLOR[tp]), color: hex(TYPE_COLOR[tp]) }}
+                />
+                <span className="text-slate-300">{lang.types[tp]}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 pt-2 border-t border-cyber-700/60 space-y-1">
+            {DOMAIN_ORDER.map((d) => (
+              <div key={d} className="flex items-center justify-between text-[11px]">
                 <span className="flex items-center gap-2">
                   <span
-                    className="w-3 h-3 rounded-sm shadow-[0_0_10px_currentColor]"
-                    style={{ backgroundColor: `#${TYPE_COLOR[tp].toString(16).padStart(6, '0')}`, color: `#${TYPE_COLOR[tp].toString(16).padStart(6, '0')}` }}
+                    className="w-2.5 h-2.5 rounded-full shadow-[0_0_8px_currentColor]"
+                    style={{ backgroundColor: hex(DOMAIN_COLOR[d]), color: hex(DOMAIN_COLOR[d]) }}
                   />
-                  <span className="text-slate-200">{lang.types[tp]}</span>
+                  <span className="text-slate-300">{lang.domains[d]}</span>
                 </span>
-                <span className="text-[10px] font-mono text-slate-500">{typeCounts[tp]}</span>
-              </button>
+                <span className="text-[9px] font-mono text-slate-500">
+                  {GRAPH.nodes.filter((n) => n.domain === d).length}
+                </span>
+              </div>
             ))}
+          </div>
+          <div className="mt-2 pt-2 border-t border-cyber-700/60">
+            <div className="text-cyan-300 text-[9px] uppercase font-mono mb-1.5 tracking-widest">{lang.relations}</div>
+            <div className="space-y-1">
+              {LEGEND_RELATIONS.map((r) => (
+                <div key={r} className="flex items-center gap-2 text-[10px]">
+                  <span className="w-4 h-[2px]" style={{ backgroundColor: hex(RELATION_COLOR[r]) }} />
+                  <span className="text-slate-400 font-mono">{lang.relationNames[r]}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="absolute top-4 right-4 glass-panel rounded-xl p-3 z-10 min-w-[180px]">
-          <div className="text-cyan-300 text-[10px] uppercase font-mono mb-2 tracking-widest">{lang.stats}</div>
-          <div className="space-y-1.5 text-xs">
-            <div className="flex justify-between"><span className="text-slate-400">{lang.nodes}</span><span className="font-mono text-white">{NODES.length}</span></div>
-            <div className="flex justify-between"><span className="text-slate-400">{lang.edges}</span><span className="font-mono text-white">{EDGES.length}</span></div>
-            <div className="flex justify-between"><span className="text-slate-400">{lang.dim}</span><span className="font-mono text-cyan-400">3D</span></div>
-            <div className="flex justify-between"><span className="text-slate-400">{lang.layout}</span><span className="font-mono text-green-400">{lang.forceLayout}</span></div>
+        {/* Learner HUD + metrics */}
+        <div className="absolute top-4 right-4 glass-panel rounded-xl p-3 z-10 w-[210px]">
+          <div className="text-cyan-300 text-[10px] uppercase font-mono mb-2 tracking-widest flex items-center gap-1.5">
+            <GraduationCap size={11} />
+            {lang.progress}
           </div>
-          <div className="mt-3 pt-3 border-t border-cyber-700/60 flex gap-2">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-mono text-slate-400">{lang.level} <span className="text-white text-sm font-bold">{level}</span></span>
+            <span className="text-[10px] font-mono text-amber-300 flex items-center gap-1"><Zap size={10} />{xp} {lang.xp}</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-cyber-800 overflow-hidden mb-2">
+            <div className="h-full bg-gradient-to-r from-cyan-500 to-amber-400 transition-all duration-500" style={{ width: `${levelPct}%` }} />
+          </div>
+          <div className="grid grid-cols-3 gap-1 text-center mb-2">
+            <div>
+              <div className="text-white font-mono text-sm font-bold flex items-center justify-center gap-0.5">
+                <Flame size={11} className="text-orange-400" />{learner.state.streakDays}
+              </div>
+              <div className="text-[8px] font-mono text-slate-500 uppercase">{lang.streak}</div>
+            </div>
+            <div>
+              <div className="text-white font-mono text-sm font-bold">{masteryPct}%</div>
+              <div className="text-[8px] font-mono text-slate-500 uppercase">{lang.mastery}</div>
+            </div>
+            <div>
+              <div className={`font-mono text-sm font-bold ${dueCount > 0 ? 'text-amber-300' : 'text-white'}`}>{dueCount}</div>
+              <div className="text-[8px] font-mono text-slate-500 uppercase">{lang.due}</div>
+            </div>
+          </div>
+          {frontier.length > 0 && (
+            <div className="pt-2 border-t border-cyber-700/60">
+              <div className="text-cyan-300 text-[9px] uppercase font-mono mb-1.5 tracking-widest">{lang.nextUp}</div>
+              <div className="space-y-1">
+                {frontier.map((n) => (
+                  <button
+                    key={n.id}
+                    onClick={() => setSelectedId(n.id)}
+                    className="w-full text-left text-[11px] text-slate-300 hover:text-cyan-300 flex items-center gap-1.5 transition-colors"
+                  >
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: hex(nodeColor(n)) }} />
+                    <span className="truncate">{labelOf(n)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="mt-2 pt-2 border-t border-cyber-700/60 flex gap-2">
             <button
               onClick={() => setAutoRotate((v) => !v)}
               title={lang.autoRotate}
@@ -617,17 +803,83 @@ export const KnowledgeGraphView: React.FC = () => {
           </div>
         </div>
 
+        {/* Learning path */}
+        {pathIds && !query.trim() && (
+          <div className="absolute left-4 bottom-4 z-10 glass-panel rounded-xl p-3 w-[230px] max-h-[45%] overflow-y-auto">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-cyan-300 text-[10px] uppercase font-mono tracking-widest flex items-center gap-1.5">
+                <Route size={11} />
+                {lang.pathTitle}
+              </div>
+              <button
+                onClick={() => setPathIds(null)}
+                className="text-[9px] font-mono text-slate-500 hover:text-slate-200 uppercase"
+              >
+                {lang.clearPath}
+              </button>
+            </div>
+            <div className="space-y-1">
+              {pathIds.map((id, i) => {
+                const n = GRAPH.node(id);
+                if (!n) return null;
+                const done = mastered.has(id);
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setSelectedId(id)}
+                    className="w-full flex items-center gap-2 text-left text-[11px] px-1 py-1 rounded hover:bg-cyber-700/40 transition-colors"
+                  >
+                    <span className={`font-mono text-[9px] w-4 shrink-0 ${done ? 'text-amber-300' : 'text-slate-500'}`}>
+                      {i + 1}
+                    </span>
+                    {done
+                      ? <CheckCircle2 size={12} className="text-amber-300 shrink-0" />
+                      : <span className="w-3 h-3 rounded-full border border-slate-600 shrink-0" />}
+                    <span className={done ? 'text-slate-500 line-through' : 'text-slate-200'}>{labelOf(n)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* XP toast */}
+        {xpToast && (
+          <div key={xpToast.ts} className="absolute bottom-36 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+            <div className="text-amber-300 font-mono font-bold text-lg animate-bounce flex items-center gap-1 drop-shadow-[0_0_12px_rgba(251,191,36,0.6)]">
+              <Zap size={16} />+{xpToast.amount} {lang.xp}
+            </div>
+          </div>
+        )}
+
+        {/* Inspector */}
         {focusNode && (
-          <div className="absolute bottom-4 left-4 right-4 z-10 flex justify-center pointer-events-none">
-            <div className="glass-panel rounded-xl p-4 max-w-xl w-full pointer-events-auto">
-              <div className="flex items-center gap-3 mb-2">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 w-full max-w-xl px-4 pointer-events-none">
+            <div className="glass-panel rounded-xl p-4 pointer-events-auto">
+              <div className="flex items-center gap-3 mb-2 flex-wrap">
                 <span
                   className="w-3.5 h-3.5 rounded-sm shadow-[0_0_12px_currentColor]"
-                  style={{ backgroundColor: `#${TYPE_COLOR[focusNode.type].toString(16).padStart(6, '0')}`, color: `#${TYPE_COLOR[focusNode.type].toString(16).padStart(6, '0')}` }}
+                  style={{ backgroundColor: hex(nodeColor(focusNode)), color: hex(nodeColor(focusNode)) }}
                 />
-                <h3 className="text-white font-bold text-sm">{lang.labels[focusNode.id]}</h3>
+                <h3 className="text-white font-bold text-sm">{labelOf(focusNode)}</h3>
                 <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-cyber-700/60 text-slate-300">
-                  {lang.types[focusNode.type]}
+                  {lang.types[focusNode.kind]}
+                </span>
+                {focusNode.domain && (
+                  <span
+                    className="text-[10px] uppercase font-mono px-2 py-0.5 rounded border"
+                    style={{ color: hex(DOMAIN_COLOR[focusNode.domain]), borderColor: `${hex(DOMAIN_COLOR[focusNode.domain])}66` }}
+                  >
+                    {lang.domains[focusNode.domain]}
+                  </span>
+                )}
+                <span className="flex items-center gap-0.5" title={lang.difficulty}>
+                  {[1, 2, 3, 4, 5].map((d) => (
+                    <span
+                      key={d}
+                      className={`w-1.5 h-1.5 rounded-full ${d <= focusNode.difficulty ? 'bg-cyan-400' : 'bg-cyber-700'}`}
+                    />
+                  ))}
                 </span>
                 {selectedId && (
                   <button
@@ -638,9 +890,80 @@ export const KnowledgeGraphView: React.FC = () => {
                   </button>
                 )}
               </div>
-              <p className="text-xs text-slate-400 leading-relaxed">{lang.descs[focusNode.id]}</p>
-              <div className="mt-2 text-[10px] text-cyan-400 font-mono uppercase tracking-widest">
-                {lang.connections}: {focusConnections}
+
+              <p className="text-xs text-slate-400 leading-relaxed mb-2">{focusNode.desc[language]}</p>
+
+              {prereqNodes.length > 0 && (
+                <div className="mb-2 flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[9px] font-mono text-amber-400/80 uppercase tracking-widest">{lang.prereqs}:</span>
+                  {prereqNodes.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setSelectedId(p.id)}
+                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded border transition-colors ${
+                        mastered.has(p.id)
+                          ? 'border-amber-400/40 text-amber-300'
+                          : 'border-cyber-600 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {mastered.has(p.id) ? '✓ ' : ''}{labelOf(p)}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {relatedNodes.length > 0 && (
+                <div className="mb-2 flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[9px] font-mono text-cyan-400/80 uppercase tracking-widest">{lang.related}:</span>
+                  {relatedNodes.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => setSelectedId(r.id)}
+                      className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-cyber-600 text-slate-400 hover:text-cyan-300 transition-colors"
+                    >
+                      {labelOf(r)}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                {focusNode.kind === 'concept' && (
+                  <>
+                    {!learner.isLearned(focusNode.id) ? (
+                      <button
+                        onClick={() => handleStudy(focusNode)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-mono uppercase border border-cyan-500/50 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition-colors"
+                      >
+                        <GraduationCap size={12} />
+                        {lang.learnBtn} +{xpForLearn(focusNode)} {lang.xp}
+                      </button>
+                    ) : focusDue ? (
+                      <button
+                        onClick={() => handleStudy(focusNode)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-mono uppercase border border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors"
+                      >
+                        <RotateCw size={12} />
+                        {lang.reviewBtn} +{xpForReview(focusNode)} {lang.xp}
+                      </button>
+                    ) : (
+                      <span className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-mono uppercase border border-amber-400/30 text-amber-300/90">
+                        <CheckCircle2 size={12} />
+                        {lang.learnedBadge}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleBuildPath(focusNode.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-mono uppercase border border-cyber-600 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors"
+                    >
+                      <Route size={12} />
+                      {lang.buildPath}
+                    </button>
+                  </>
+                )}
+                <span className="ml-auto text-[10px] text-cyan-400 font-mono uppercase tracking-widest">
+                  {lang.connections}: {GRAPH.degree(focusNode.id)}
+                </span>
               </div>
             </div>
           </div>
