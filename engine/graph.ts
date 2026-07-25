@@ -106,6 +106,11 @@ export class SemanticGraph {
    * shared tags, then shared domain.
    */
   related(id: string, limit = 5): KnowledgeNode[] {
+    return this.relatedScored(id, limit).map((s) => s.node);
+  }
+
+  /** Scored variant of `related`, for blending with vector similarity. */
+  relatedScored(id: string, limit = 5): { node: KnowledgeNode; score: number }[] {
     const origin = this.byId.get(id);
     if (!origin) return [];
     const originTags = new Set(origin.tags);
@@ -126,7 +131,7 @@ export class SemanticGraph {
       .filter((s) => s.score > 0);
 
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, limit).map((s) => s.node);
+    return scored.slice(0, limit);
   }
 
   /** Bilingual lexical search over labels, descriptions and tags. */

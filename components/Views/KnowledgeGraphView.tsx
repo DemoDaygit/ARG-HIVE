@@ -2,15 +2,20 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import {
   Network, RotateCw, Pause, Play, Shuffle, Search, Flame, Zap,
-  Route, CheckCircle2, GraduationCap, X,
+  Route, CheckCircle2, XCircle, GraduationCap, X, BrainCircuit,
 } from 'lucide-react';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { SemanticGraph } from '../../engine/graph';
 import { SEMANTIC_FIELD } from '../../engine/dataset';
+import { SemanticEngine } from '../../engine/semantics';
+import { QuizBank, QuizQuestion } from '../../engine/quiz';
+import { QUIZZES } from '../../engine/quizzes';
 import { KnowledgeEdge, KnowledgeNode, NodeKind, Domain, RelationKind } from '../../engine/types';
 import { LearnerModel, levelFromXp, levelBounds, xpForLearn, xpForReview } from '../../engine/learner';
 
 const GRAPH = new SemanticGraph(SEMANTIC_FIELD);
+const SEMANTICS = new SemanticEngine(GRAPH);
+const QUIZ_BANK = new QuizBank(QUIZZES);
 const CONCEPT_IDS = GRAPH.nodes.filter((n) => n.kind === 'concept').map((n) => n.id);
 
 const TYPE_COLOR: Record<NodeKind, number> = {
@@ -277,6 +282,14 @@ export const KnowledgeGraphView: React.FC = () => {
   const [learner] = useState(() => new LearnerModel());
   const [learnerTick, setLearnerTick] = useState(0);
   const [xpToast, setXpToast] = useState<{ amount: number; ts: number } | null>(null);
+  const [quiz, setQuiz] = useState<{
+    node: KnowledgeNode;
+    q: QuizQuestion;
+    selected: number | null;
+    answered: boolean;
+    passed: boolean;
+    awarded: number;
+  } | null>(null);
 
   const hoveredRef = useRef<string | null>(null);
   const selectedRef = useRef<string | null>(null);
@@ -297,7 +310,7 @@ export const KnowledgeGraphView: React.FC = () => {
 
   const mastered = useMemo(() => learner.masteredSet(), [learner, learnerTick]);
   const searchHits = useMemo(
-    () => (query.trim() ? GRAPH.search(query, language) : []),
+    () => (query.trim() ? SEMANTICS.search(query, language) : []),
     [query, language],
   );
   const frontier = useMemo(() => GRAPH.frontier(mastered, 3), [mastered]);
@@ -614,7 +627,7 @@ export const KnowledgeGraphView: React.FC = () => {
   const now = Date.now();
   const focusProgress = focusNode ? learner.state.progress[focusNode.id] : undefined;
   const focusDue = focusProgress ? focusProgress.dueAt <= now : false;
-  const relatedNodes = focusNode ? GRAPH.related(focusNode.id, 4) : [];
+  const relatedNodes = focusNode ? SEMANTICS.related(focusNode.id, 4) : [];
   const prereqNodes = focusNode ? GRAPH.prerequisites(focusNode.id) : [];
 
   const xp = learner.state.xp;
@@ -623,10 +636,26 @@ export const KnowledgeGraphView: React.FC = () => {
   const levelPct = Math.min(100, Math.round(((xp - bounds.current) / Math.max(1, bounds.next - bounds.current)) * 100));
   const masteryPct = Math.round(learner.masteryRatio(CONCEPT_IDS) * 100);
   const dueCount = learner.dueIds(now).length;
+  const accuracy = learner.accuracy();
 
   const handleStudy = (node: KnowledgeNode) => {
-    const gained = learner.study(node, Date.now());
-    if (gained > 0) setXpToast({ amount: gained, ts: Date.now() });
+    const q = QUIZ_BANK.pick(node.id, learner.attemptCount(node.id));
+    if (!q) {
+      // No quiz card authored for this concept — legacy one-click study.
+      const gained = learner.study(node, Date.now());
+      if (gained > 0) setXpToast({ amount: gained, ts: Date.now() });
+      setLearnerTick((v) => v + 1);
+      return;
+    }
+    setQuiz({ node, q, selected: null, answered: false, passed: false, awarded: 0 });
+  };
+
+  const handleQuizSubmit = () => {
+    if (!quiz || quiz.selected === null || quiz.answered) return;
+    const passed = quiz.selected === quiz.q.correct;
+    const awarded = learner.study(quiz.node, Date.now(), passed);
+    if (awarded > 0) setXpToast({ amount: awarded, ts: Date.now() });
+    setQuiz({ ...quiz, answered: true, passed, awarded });
     setLearnerTick((v) => v + 1);
   };
 
@@ -747,7 +776,7 @@ export const KnowledgeGraphView: React.FC = () => {
           <div className="h-1.5 rounded-full bg-cyber-800 overflow-hidden mb-2">
             <div className="h-full bg-gradient-to-r from-cyan-500 to-amber-400 transition-all duration-500" style={{ width: `${levelPct}%` }} />
           </div>
-          <div className="grid grid-cols-3 gap-1 text-center mb-2">
+          <div className="grid grid-cols-4 gap-1 text-center mb-2">
             <div>
               <div className="text-white font-mono text-sm font-bold flex items-center justify-center gap-0.5">
                 <Flame size={11} className="text-orange-400" />{learner.state.streakDays}
@@ -757,6 +786,10 @@ export const KnowledgeGraphView: React.FC = () => {
             <div>
               <div className="text-white font-mono text-sm font-bold">{masteryPct}%</div>
               <div className="text-[8px] font-mono text-slate-500 uppercase">{lang.mastery}</div>
+            </div>
+            <div>
+              <div className="text-white font-mono text-sm font-bold">{accuracy === null ? '—' : `${Math.round(accuracy * 100)}%`}</div>
+              <div className="text-[8px] font-mono text-slate-500 uppercase">{lang.accuracy}</div>
             </div>
             <div>
               <div className={`font-mono text-sm font-bold ${dueCount > 0 ? 'text-amber-300' : 'text-white'}`}>{dueCount}</div>
@@ -848,6 +881,87 @@ export const KnowledgeGraphView: React.FC = () => {
           <div key={xpToast.ts} className="absolute bottom-36 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
             <div className="text-amber-300 font-mono font-bold text-lg animate-bounce flex items-center gap-1 drop-shadow-[0_0_12px_rgba(251,191,36,0.6)]">
               <Zap size={16} />+{xpToast.amount} {lang.xp}
+            </div>
+          </div>
+        )}
+
+        {/* Knowledge check (quiz) */}
+        {quiz && (
+          <div className="absolute inset-0 z-30 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+            <div className="glass-panel rounded-xl p-5 w-full max-w-lg">
+              <div className="flex items-center gap-2 mb-3">
+                <BrainCircuit size={14} className="text-cyan-400" />
+                <span className="text-cyan-300 text-[10px] uppercase font-mono tracking-widest">{lang.quizTitle}</span>
+                <span className="text-slate-400 text-[10px] font-mono truncate">· {labelOf(quiz.node)}</span>
+                <button
+                  onClick={() => setQuiz(null)}
+                  className="ml-auto text-slate-500 hover:text-slate-200"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <p className="text-sm text-slate-200 leading-relaxed mb-4">{quiz.q.prompt[language]}</p>
+
+              <div className="space-y-2 mb-4">
+                {quiz.q.options.map((opt, i) => {
+                  let cls = 'border-cyber-600 text-slate-300 hover:border-cyan-500/50';
+                  if (!quiz.answered && quiz.selected === i) {
+                    cls = 'border-cyan-400 text-cyan-200 bg-cyan-500/10';
+                  } else if (quiz.answered && i === quiz.q.correct) {
+                    cls = 'border-green-400/70 text-green-300 bg-green-500/10';
+                  } else if (quiz.answered && quiz.selected === i) {
+                    cls = 'border-red-400/70 text-red-300 bg-red-500/10';
+                  } else if (quiz.answered) {
+                    cls = 'border-cyber-700 text-slate-500';
+                  }
+                  return (
+                    <button
+                      key={i}
+                      disabled={quiz.answered}
+                      onClick={() => setQuiz({ ...quiz, selected: i })}
+                      className={`w-full text-left text-xs px-3 py-2 rounded border transition-colors ${cls}`}
+                    >
+                      <span className="font-mono text-[10px] mr-2 opacity-60">{String.fromCharCode(65 + i)}</span>
+                      {opt[language]}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {quiz.answered && (
+                <div className={`mb-4 rounded-lg border p-3 ${quiz.passed ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+                  <div className={`flex items-center gap-1.5 text-xs font-bold mb-1 ${quiz.passed ? 'text-green-300' : 'text-red-300'}`}>
+                    {quiz.passed ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                    {quiz.passed ? lang.quizCorrect : lang.quizWrong}
+                    {quiz.awarded > 0 && (
+                      <span className="ml-auto text-amber-300 font-mono flex items-center gap-0.5">
+                        <Zap size={11} />+{quiz.awarded} {lang.xp}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">{quiz.q.explanation[language]}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                {!quiz.answered ? (
+                  <button
+                    onClick={handleQuizSubmit}
+                    disabled={quiz.selected === null}
+                    className="px-4 py-1.5 rounded text-[10px] font-mono uppercase border border-cyan-500/50 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {lang.quizSubmit}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setQuiz(null)}
+                    className="px-4 py-1.5 rounded text-[10px] font-mono uppercase border border-cyber-600 text-slate-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-colors"
+                  >
+                    {lang.quizContinue}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

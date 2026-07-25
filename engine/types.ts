@@ -65,10 +65,26 @@ export interface NodeProgress {
   learnedAt: number;
 }
 
+/** Per-concept quiz answer history (exists even before a concept is learned). */
+export interface AttemptStats {
+  correct: number;
+  wrong: number;
+}
+
 export interface LearnerState {
-  version: 1;
+  version: 2;
   xp: number;
   streakDays: number;
   lastActiveDay: string; // YYYY-MM-DD
+  progress: Record<string, NodeProgress>;
+  attempts: Record<string, AttemptStats>;
+}
+
+/** Pre-quiz state shape (storage version 1), kept for migration. */
+export interface LearnerStateV1 {
+  version: 1;
+  xp: number;
+  streakDays: number;
+  lastActiveDay: string;
   progress: Record<string, NodeProgress>;
 }

@@ -24,9 +24,15 @@ Interactive investor/учебная SPA about a decentralized Swarm AI network
 ## Conventions & decisions
 
 - All user-facing text is bilingual: UI chrome lives in `translations.ts`,
-  graph node content lives in `engine/dataset.ts` as `{ en, ru }`.
+  graph node content lives in `engine/dataset.ts` as `{ en, ru }`,
+  quiz cards live in `engine/quizzes.ts`.
 - `engine/` stays pure TypeScript (no React/three.js) so it can move
   server-side later.
+- Studying = answering a quiz card (graded SM-2 with lapses); search and
+  "related" go through `engine/semantics.ts` (hybrid lexical + trigram VSM),
+  not raw `SemanticGraph.search`.
+- Learner state is versioned (`LearnerState.version`); breaking changes
+  require an in-place migration in `learner.ts`.
 - Tailwind is configured inline in `index.html` (custom `cyber-*` palette,
   `.glass-panel`); there is no tailwind.config file.
 - Learner progress persists in `localStorage` (`arg-hive:learner:v1`).

@@ -1,4 +1,4 @@
-import { KnowledgeNode, LearnerState, NodeProgress } from './types';
+import { AttemptStats, KnowledgeNode, LearnerState, LearnerStateV1, NodeProgress } from './types';
 
 const STORAGE_KEY = 'arg-hive:learner:v1';
 
@@ -8,7 +8,16 @@ const INTERVALS = [1, 3, 7, 16, 35, 70];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function emptyState(): LearnerState {
-  return { version: 1, xp: 0, streakDays: 0, lastActiveDay: '', progress: {} };
+  return { version: 2, xp: 0, streakDays: 0, lastActiveDay: '', progress: {}, attempts: {} };
+}
+
+/** v1 states predate quizzes: every learn/review was an implicit pass. */
+function migrateV1(v1: LearnerStateV1): LearnerState {
+  const attempts: Record<string, AttemptStats> = {};
+  for (const [id, p] of Object.entries(v1.progress)) {
+    attempts[id] = { correct: p.reviews + 1, wrong: 0 };
+  }
+  return { ...v1, version: 2, attempts };
 }
 
 function dayKey(ts: number): string {
@@ -34,9 +43,11 @@ export function levelBounds(xp: number): { current: number; next: number } {
 }
 
 /**
- * The learner model: per-concept mastery with spaced-repetition scheduling,
- * plus XP / streak gamification. Pure state machine over LearnerState —
- * persistence is a thin localStorage adapter so the core stays testable.
+ * The learner model, v2: knowledge is earned by answering quiz questions.
+ * A correct answer advances the SM-2-lite schedule and grants XP; a wrong
+ * answer on a due review lapses the memory (interval reset, mastery drop).
+ * Pure state machine over LearnerState — persistence is a thin localStorage
+ * adapter so the core stays testable.
  */
 export class LearnerModel {
   state: LearnerState;
@@ -49,9 +60,10 @@ export class LearnerModel {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return emptyState();
-      const parsed = JSON.parse(raw) as LearnerState;
-      if (parsed.version !== 1) return emptyState();
-      return parsed;
+      const parsed = JSON.parse(raw) as LearnerState | LearnerStateV1;
+      if (parsed.version === 2) return parsed;
+      if (parsed.version === 1) return migrateV1(parsed);
+      return emptyState();
     } catch {
       return emptyState();
     }
@@ -73,12 +85,35 @@ export class LearnerModel {
     this.state.lastActiveDay = today;
   }
 
+  private recordAttempt(id: string, passed: boolean) {
+    const a = this.state.attempts[id] ?? { correct: 0, wrong: 0 };
+    if (passed) a.correct += 1;
+    else a.wrong += 1;
+    this.state.attempts[id] = a;
+  }
+
   isLearned(id: string): boolean {
     return id in this.state.progress;
   }
 
   masteredSet(): Set<string> {
     return new Set(Object.keys(this.state.progress));
+  }
+
+  /** Total quiz attempts for a concept — drives question rotation. */
+  attemptCount(id: string): number {
+    const a = this.state.attempts[id];
+    return a ? a.correct + a.wrong : 0;
+  }
+
+  /** Overall answer accuracy 0..1, or null before any attempt. */
+  accuracy(): number | null {
+    let correct = 0, total = 0;
+    for (const a of Object.values(this.state.attempts)) {
+      correct += a.correct;
+      total += a.correct + a.wrong;
+    }
+    return total === 0 ? null : correct / total;
   }
 
   /** Concepts whose review is due (memory decay passed the threshold). */
@@ -96,11 +131,27 @@ export class LearnerModel {
   }
 
   /**
-   * First-time learn or a due review of a node. Returns the XP awarded
-   * (0 when the node is already fresh in memory).
+   * Record a study attempt (first learn or due review), graded by quiz
+   * outcome. Returns XP awarded — 0 for a wrong answer, a not-yet-due
+   * review, or a failed first attempt.
    */
-  study(node: KnowledgeNode, now: number): number {
+  study(node: KnowledgeNode, now: number, passed = true): number {
     const existing = this.state.progress[node.id];
+    this.recordAttempt(node.id, passed);
+
+    if (!passed) {
+      // Lapse: a due review answered wrong resets the memory schedule.
+      if (existing && existing.dueAt <= now) {
+        this.state.progress[node.id] = {
+          ...existing,
+          mastery: Math.max(0.3, existing.mastery - 0.15),
+          intervalDays: INTERVALS[0],
+          dueAt: now + INTERVALS[0] * DAY_MS,
+        };
+      }
+      this.save();
+      return 0;
+    }
 
     if (!existing) {
       this.state.progress[node.id] = {
@@ -116,15 +167,20 @@ export class LearnerModel {
       return xpForLearn(node);
     }
 
-    if (existing.dueAt > now) return 0; // not due yet — no XP farming
+    if (existing.dueAt > now) {
+      this.save();
+      return 0; // not due yet — no XP farming
+    }
 
-    const nextIdx = Math.min(existing.reviews + 1, INTERVALS.length - 1);
+    // Advance from the CURRENT interval (lapses reset it to 1 day), rather
+    // than from the lifetime review count.
+    const nextInterval = INTERVALS.find((i) => i > existing.intervalDays) ?? INTERVALS[INTERVALS.length - 1];
     const updated: NodeProgress = {
       ...existing,
       reviews: existing.reviews + 1,
       mastery: Math.min(1, existing.mastery + 0.15),
-      intervalDays: INTERVALS[nextIdx],
-      dueAt: now + INTERVALS[nextIdx] * DAY_MS,
+      intervalDays: nextInterval,
+      dueAt: now + nextInterval * DAY_MS,
     };
     this.state.progress[node.id] = updated;
     this.touchStreak(now);
